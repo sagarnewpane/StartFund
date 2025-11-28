@@ -3,7 +3,7 @@
 </script>
 
 <header>
-    <div class="bg-light min-w-screen min-h-[40px]  flex justify-between p-4">
+    <div class="bg-light min-w-screen min-h-10  flex justify-between p-4">
         <div>
             <img src="./Icon.png" alt="" width="140">
         </div>
