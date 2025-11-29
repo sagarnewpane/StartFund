@@ -32,4 +32,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    return UserInDB(**user)
+    user["_id"] = str(user["_id"])
+    user = UserInDB(**user)
+    return user

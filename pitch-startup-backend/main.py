@@ -1,14 +1,28 @@
 import os
 from datetime import datetime, timedelta
+from typing import List
 
 from auth import hash_password, verify_password
 from auth_dependencies import get_current_user
-from database import users_collection
+from database import startups_collection, users_collection
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from jose import JWTError, jwt
-from models import LoginRequest, TokenResponse, UserCreate, UserInDB, UserPublic
+from models import (
+    LoginRequest,
+    StartUpPitchBase,
+    StartUpPitchCard,
+    StartUpPitchCreate,
+    StartUpPitchInDB,
+    StartUpPitchPublic,
+    StoreUserCreate,
+    TokenResponse,
+    UserCreate,
+    UserInDB,
+    UserPublic,
+)
+from motor.docstrings import start_session_doc
 
 load_dotenv()
 
@@ -52,8 +66,12 @@ async def register_user(user: UserCreate):
 
     hashed = hash_password(user.password)
 
-    user_in_db = UserInDB(
-        email=user.email, hashed_password=hashed, full_name=user.full_name
+    user_in_db = StoreUserCreate(
+        email=user.email,
+        hashed_password=hashed,
+        full_name=user.full_name,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
     )
 
     await users_collection.insert_one(user_in_db.model_dump())
@@ -72,6 +90,7 @@ async def login(request: LoginRequest):
     if not user:
         raise HTTPException(status_code=400, detail="Invalid username or password")
 
+    user["_id"] = str(user["_id"])
     user_in_db = UserInDB(**user)
 
     if not verify_password(request.password, user_in_db.hashed_password):
@@ -103,6 +122,7 @@ async def login(request: LoginRequest):
 @app.get("/profile")
 async def profile(current_user: UserInDB = Depends(get_current_user)):
     return {
+        "id": current_user.id,
         "email": current_user.email,
         "full_name": current_user.full_name,
     }
@@ -141,3 +161,89 @@ async def logout():
     response = JSONResponse({"message": "Logged out"})
     response.delete_cookie("refresh_token", path="/")
     return response
+
+
+# ------------------------------
+# CREATE A STARTUP PITCH
+# ------------------------------
+@app.post("/startups")
+async def create_startup(
+    startup: StartUpPitchCreate, current_user: UserInDB = Depends(get_current_user)
+):
+    user_id = current_user.id
+    startup_data = startup.model_dump()
+    startup_data.update(
+        {
+            "user_id": user_id,
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+            "total_funded": 0,
+            "status": "pending",
+        }
+    )
+
+    result = await startups_collection.insert_one(startup_data)
+    print(result)
+    return {"id": str(result.inserted_id)}
+
+
+# ------------------------------
+# GET ALL STARTUPS
+# ------------------------------
+
+
+@app.get("/startups", response_model=List[StartUpPitchCard])
+async def get_all_startups():
+    startups = await startups_collection.find().to_list(100)
+    for s in startups:
+        s["_id"] = str(s["_id"])  # convert ObjectId → string
+        s["user_id"] = str(s["user_id"])  # do same for user_id if needed
+    return startups
+
+
+# ------------------------------
+# GET ALL STARTUPS OF A USER
+# ------------------------------
+
+
+@app.get("/users/{user_id}/startups", response_model=List[StartUpPitchCard])
+async def get_all_startups_of_user(user_id: str):
+    startups = await startups_collection.find({"user_id": user_id}).to_list(100)
+    for s in startups:
+        # s["id"] = str(s["_id"])
+        s["_id"] = str(s["_id"])  # convert ObjectId → string
+        s["user_id"] = str(s["user_id"])  # do same for user_id if needed
+    return startups
+
+
+# ------------------------------
+# GET A STARTUP PITCH BY ID
+# ------------------------------
+
+
+from bson import ObjectId
+from fastapi import HTTPException
+
+
+@app.get(
+    "/startups/{startup_id}",
+    response_model=StartUpPitchPublic,
+    response_model_by_alias=False,
+)
+async def get_startup(startup_id: str):
+    # convert string → ObjectId
+    try:
+        oid = ObjectId(startup_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid startup ID")
+
+    startup = await startups_collection.find_one({"_id": oid})
+
+    if startup is None:
+        raise HTTPException(status_code=404, detail="Startup not found")
+
+    # convert ObjectId → str
+    startup["_id"] = str(startup["_id"])
+    startup["user_id"] = str(startup["user_id"])
+
+    return startup
