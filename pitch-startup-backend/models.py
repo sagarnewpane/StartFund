@@ -1,9 +1,7 @@
 import datetime
 from typing import Optional
 
-from motor.docstrings import create_data_key_doc
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
-from pydantic.types import Base64Bytes
 
 
 class UserCreate(BaseModel):
@@ -97,3 +95,13 @@ class StartUpPitchCard(BaseModel):
     total_funded: float
     status: str
     created_at: datetime.datetime
+
+
+class StartUpPitchUpdate(BaseModel):
+    updated_at: Optional[datetime.datetime] = None
+    title: str
+    description: str
+    category: str
+    image_url: Optional[str] = None
+    video_url: Optional[str] = None
+    pitch: str
