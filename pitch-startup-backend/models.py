@@ -105,3 +105,24 @@ class StartUpPitchUpdate(BaseModel):
     image_url: Optional[str] = None
     video_url: Optional[str] = None
     pitch: str
+
+
+# Investment model
+class InvestementBase(BaseModel):
+    user_id: str
+    startup_id: str
+    amount: float
+    invested_at: datetime.datetime
+
+
+class InvestmentRequest(BaseModel):
+    amount: float
+
+
+class InvestementInDB(InvestementBase):
+    id: str = Field(alias="_id")
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class InvestementPublic(InvestementBase):
+    pass

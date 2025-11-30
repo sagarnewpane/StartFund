@@ -1,16 +1,20 @@
 import os
+import re
 from datetime import datetime, timedelta
 from typing import List
 
 from auth import hash_password, verify_password
 from auth_dependencies import get_current_user
 from bson import ObjectId
-from database import startups_collection, users_collection
+from database import investments_collection, startups_collection, users_collection
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi._compat.v1 import RequestErrorModel
 from fastapi.responses import JSONResponse
 from jose import JWTError, jwt
 from models import (
+    InvestementInDB,
+    InvestmentRequest,
     LoginRequest,
     StartUpPitchCard,
     StartUpPitchCreate,
@@ -312,3 +316,60 @@ async def delete_startup(
     await startups_collection.delete_one({"_id": oid})
 
     return {"message": "Startup deleted"}
+
+
+# ------------------------------
+# INVEST IN A PITCH
+# ------------------------------
+#
+@router.post("/startups/{startup_id}/invest")
+async def invest(
+    startup_id: str,
+    data: InvestmentRequest,
+    current_user: UserInDB = Depends(get_current_user),
+):
+    amount = data.amount
+    user_id = current_user.id
+    invested_at = datetime.utcnow()
+
+    investment_doc = {
+        "user_id": user_id,
+        "startup_id": startup_id,
+        "amount": amount,
+        "invested_at": invested_at,
+    }
+
+    result = await investments_collection.insert_one(investment_doc)
+    if result.inserted_id:
+        await startups_collection.update_one(
+            {"_id": ObjectId(startup_id)}, {"$inc": {"total_funded": amount}}
+        )
+
+        # Convert Mongo ObjectIds → strings
+    investment_doc["_id"] = str(investment_doc["_id"])
+    investment_doc["user_id"] = str(investment_doc["user_id"])
+    investment_doc["startup_id"] = str(investment_doc["startup_id"])
+
+    return InvestementInDB(**investment_doc)
+
+
+# ------------------------------
+# SEE ALL INVESTMENT HISTORY OF THE USER
+# ------------------------------
+
+
+@router.get("/users/investments")
+async def get_user_investments(
+    current_user: UserInDB = Depends(get_current_user),
+):
+    investments = await investments_collection.find(
+        {"user_id": current_user.id}
+    ).to_list(None)
+
+    # Convert Mongo ObjectIds → strings
+    for investment in investments:
+        investment["_id"] = str(investment["_id"])
+        investment["user_id"] = str(investment["user_id"])
+        investment["startup_id"] = str(investment["startup_id"])
+
+    return [InvestementInDB(**investment) for investment in investments]
