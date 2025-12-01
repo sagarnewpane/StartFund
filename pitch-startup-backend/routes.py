@@ -121,12 +121,92 @@ async def login(request: LoginRequest):
 # ------------------------------
 
 
-@router.get("/profile")
-async def profile(current_user: UserInDB = Depends(get_current_user)):
+# ------------------------------
+# ENHANCED USER PROFILE (Single Call)
+# ------------------------------
+
+
+@router.get("/users/{user_id}/profile")
+async def get_user_full_profile(user_id: str):
+    """Get complete user profile with startups and investments in ONE call"""
+
+    # 1. Get user basic info
+    user = await users_collection.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # 2. Get user's startups
+    startups = await startups_collection.find({"user_id": user_id}).to_list(None)
+    for s in startups:
+        s["_id"] = str(s["_id"])
+        s["user_id"] = str(s["user_id"])
+
+    # 3. Get user's investments
+    investments = await investments_collection.find({"user_id": user_id}).to_list(None)
+    for inv in investments:
+        inv["_id"] = str(inv["_id"])
+        inv["user_id"] = str(inv["user_id"])
+        inv["startup_id"] = str(inv["startup_id"])
+
+    # 4. Calculate totals
+    total_raised = sum(s.get("total_funded", 0) for s in startups)
+    total_invested = sum(inv.get("amount", 0) for inv in investments)
+
     return {
-        "id": current_user.id,
-        "email": current_user.email,
-        "full_name": current_user.full_name,
+        "user": {
+            "id": str(user["_id"]),
+            "email": user["email"],
+            "full_name": user["full_name"],
+            "created_at": user.get("created_at"),
+        },
+        "startups": startups,
+        "investments": investments,
+        "stats": {
+            "total_startups": len(startups),
+            "total_raised": total_raised,
+            "total_invested": total_invested,
+            "total_investments": len(investments),
+        },
+    }
+
+
+# ------------------------------
+# DASHBOARD (For Current Logged-in User)
+# ------------------------------
+
+
+@router.get("/dashboard")
+async def get_dashboard(current_user: UserInDB = Depends(get_current_user)):
+    """Get complete dashboard for logged-in user"""
+
+    user_id = current_user.id
+
+    # Get user's startups
+    startups = await startups_collection.find({"user_id": user_id}).to_list(None)
+    for s in startups:
+        s["_id"] = str(s["_id"])
+        s["user_id"] = str(s["user_id"])
+
+    # Get user's investments
+    investments = await investments_collection.find({"user_id": user_id}).to_list(None)
+    for inv in investments:
+        inv["_id"] = str(inv["_id"])
+        inv["user_id"] = str(inv["user_id"])
+        inv["startup_id"] = str(inv["startup_id"])
+
+    # Calculate totals
+    total_raised = sum(s.get("total_funded", 0) for s in startups)
+    total_invested = sum(inv.get("amount", 0) for inv in investments)
+
+    return {
+        "my_startups": startups,
+        "my_investments": investments,
+        "total_raised": total_raised,
+        "total_invested": total_invested,
+        "stats": {
+            "startups_count": len(startups),
+            "investments_count": len(investments),
+        },
     }
 
 
@@ -358,18 +438,170 @@ async def invest(
 # ------------------------------
 
 
-@router.get("/users/investments")
-async def get_user_investments(
-    current_user: UserInDB = Depends(get_current_user),
-):
-    investments = await investments_collection.find(
-        {"user_id": current_user.id}
-    ).to_list(None)
+@router.get("/users/{user_id}/investments")
+async def get_user_investments(user_id: str):
+    """Get investments of any user by their ID"""
 
-    # Convert Mongo ObjectIds → strings
+    investments = await investments_collection.find({"user_id": user_id}).to_list(None)
+
     for investment in investments:
         investment["_id"] = str(investment["_id"])
         investment["user_id"] = str(investment["user_id"])
         investment["startup_id"] = str(investment["startup_id"])
 
-    return [InvestementInDB(**investment) for investment in investments]
+    return investments
+
+
+# ------------------------------
+# GET INVESTMENTS FOR A STARTUP
+# ------------------------------
+
+
+@router.get("/startups/{startup_id}/investments")
+async def get_startup_investments(startup_id: str):
+    """Get all investments made to a specific startup"""
+
+    try:
+        ObjectId(startup_id)  # Validate
+    except:
+        raise HTTPException(status_code=400, detail="Invalid startup ID")
+
+    investments = await investments_collection.find({"startup_id": startup_id}).to_list(
+        None
+    )
+
+    for inv in investments:
+        inv["_id"] = str(inv["_id"])
+        inv["user_id"] = str(inv["user_id"])
+        inv["startup_id"] = str(inv["startup_id"])
+
+    return investments
+
+
+# ------------------------------
+# GET STARTUP ANALYTICS
+# ------------------------------
+
+
+@router.get("/startups/{startup_id}/analytics")
+async def get_startup_analytics(startup_id: str):
+    """Get detailed analytics for a startup"""
+
+    try:
+        oid = ObjectId(startup_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid startup ID")
+
+    # Get startup
+    startup = await startups_collection.find_one({"_id": oid})
+    if not startup:
+        raise HTTPException(status_code=404, detail="Startup not found")
+
+    # Get all investments
+    investments = await investments_collection.find({"startup_id": startup_id}).to_list(
+        None
+    )
+
+    # Calculate analytics
+    total_funded = startup.get("total_funded", 0)
+    funding_goal = startup.get("funding_goal", 0)
+    investor_count = len(investments)
+    funding_progress = (total_funded / funding_goal * 100) if funding_goal > 0 else 0
+
+    # Recent investments (last 5)
+    recent_investments = sorted(
+        investments, key=lambda x: x.get("invested_at", datetime.utcnow()), reverse=True
+    )[:5]
+
+    for inv in recent_investments:
+        inv["_id"] = str(inv["_id"])
+        inv["user_id"] = str(inv["user_id"])
+        inv["startup_id"] = str(inv["startup_id"])
+
+    return {
+        "startup_id": startup_id,
+        "total_funded": total_funded,
+        "funding_goal": funding_goal,
+        "investor_count": investor_count,
+        "funding_progress": round(funding_progress, 2),
+        "recent_investments": recent_investments,
+    }
+
+
+# ------------------------------
+# SEARCH AND FILTER STARTUPS
+# ------------------------------
+
+
+@router.get("/search")
+async def search_startups(
+    q: str | None = None,
+    category: str | None = None,
+):
+    query = {}
+
+    # 🔍 Search (title, description, pitch)
+    if q:
+        query["$or"] = [
+            {"title": {"$regex": q, "$options": "i"}},
+            {"description": {"$regex": q, "$options": "i"}},
+            {"pitch": {"$regex": q, "$options": "i"}},
+        ]
+
+    # 🏷 Category filter
+    if category:
+        query["category"] = category
+
+    startups = await startups_collection.find(query).limit(50).to_list(50)
+
+    for s in startups:
+        s["_id"] = str(s["_id"])
+        s["user_id"] = str(s["user_id"])
+
+    return startups
+
+
+@router.get("/startups/trending")
+async def get_trending_startups():
+    pipeline = [
+        {"$sort": {"timestamp": -1}},  # latest investments first
+        {"$group": {"_id": "$startup_id"}},  # unique startups
+        {"$limit": 10},
+    ]
+
+    recent = await investments_collection.aggregate(pipeline).to_list(10)
+    ids = [r["_id"] for r in recent]
+
+    startups = await startups_collection.find({"_id": {"$in": ids}}).to_list(10)
+
+    for s in startups:
+        s["_id"] = str(s["_id"])
+        s["user_id"] = str(s["user_id"])
+
+    return startups
+
+
+@router.get("/startups/top-funded")
+async def get_top_funded_startups(limit: int = 10):
+    startups = (
+        await startups_collection.find({})
+        .sort("total_funded", -1)
+        .limit(limit)
+        .to_list(limit)
+    )
+
+    for s in startups:
+        s["_id"] = str(s["_id"])
+        s["user_id"] = str(s["user_id"])
+
+    return startups
+
+
+@router.get("/categories")
+async def get_categories():
+    pipeline = [{"$group": {"_id": "$category"}}, {"$sort": {"_id": 1}}]
+
+    items = await startups_collection.aggregate(pipeline).to_list(None)
+    categories = [item["_id"] for item in items if item["_id"]]
+
+    return {"categories": categories}
