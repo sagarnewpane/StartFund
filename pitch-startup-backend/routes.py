@@ -539,8 +539,6 @@ async def search_startups(
     category: str | None = None,
 ):
     query = {}
-
-    # 🔍 Search (title, description, pitch)
     if q:
         query["$or"] = [
             {"title": {"$regex": q, "$options": "i"}},
@@ -548,7 +546,6 @@ async def search_startups(
             {"pitch": {"$regex": q, "$options": "i"}},
         ]
 
-    # 🏷 Category filter
     if category:
         query["category"] = category
 
