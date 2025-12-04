@@ -4,11 +4,12 @@
     import Hero from "../components/Hero.svelte";
 	import Login from "../components/Login.svelte";
 	import Signup from "../components/Signup.svelte";
+	import SubmitPitch from "../components/SubmitPitch.svelte";
 </script>
 
 <section>
-    <Hero/>
-    <div class="p-6">
-    <Card/>
+    <!-- <Hero/> -->
+    <div class="">
+        <SubmitPitch/>
     </div>
 </section>
