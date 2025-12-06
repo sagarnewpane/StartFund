@@ -1,57 +1,48 @@
 <script>
-    import { resolve } from '$app/paths';
-    import Login from './Login.svelte';
-    import Signup from './Signup.svelte';
+    import { enhance } from '$app/forms'; // Makes the form submit without a full page reload
 
-    let showLogin = $state(false);
-    let showSignup = $state(false);
-    let {user} = $props();
-
-    function handleModalClose(){
-      showLogin = false
-      showSignup = false
-    }
-
-    async function handleLogout(){
-      await fetch('/api/logout', {method: 'POST'});
-
-      resolve('/')
-    }
+    // Receive the user object from the layout
+    let { user } = $props();
 </script>
 
 <header>
-    <div class="bg-light min-w-screen min-h-10 flex justify-between p-4">
+    <div class="bg-light min-w-screen min-h-10 flex justify-between p-4 items-center">
         <div>
-            <a href={resolve('/')}><img src="./Icon.png" alt="" width="140"></a>
+            <a href="/">
+                <img src="./Icon.png" alt="Logo" width="140">
+            </a>
         </div>
-        <div class="flex">
+
+        <div class="flex items-center gap-4">
             {#if !user}
-            <button
-                onclick={() => showSignup = true}
-                class="text-black font-semibold mr-4 hover:underline"
-            >
-                Sign Up
-            </button>
-            <button
-                onclick={() => showLogin = true}
-                class="bg-primary text-white py-2 px-4 rounded-3xl font-semibold border-2 border-black hover:shadow-[3px_3px_0px_0px_black] transition-all"
-            >
-                Login
-            </button>
+                <a
+                    href="/signup"
+                    class="text-black font-semibold hover:underline"
+                >
+                    Sign Up
+                </a>
+
+                <a
+                    href="/login"
+                    class="bg-primary text-white py-2 px-4 rounded-3xl font-semibold border-2 border-black hover:shadow-[3px_3px_0px_0px_black] transition-all"
+                >
+                    Login
+                </a>
+
             {:else}
-            <button onclick={handleLogout}>Logout</button>
+                <span class="font-semibold text-gray-700">
+                    Hello, {user.username || 'User'}
+                </span>
+
+                <form action="/logout" method="POST" use:enhance>
+                    <button
+                        type="submit"
+                        class="bg-red-500 text-white py-2 px-4 rounded-3xl font-semibold border-2 border-black hover:shadow-[3px_3px_0px_0px_black] transition-all"
+                    >
+                        Logout
+                    </button>
+                </form>
             {/if}
         </div>
     </div>
 </header>
-
-<!-- Modals -->
-<Login
-    isOpen={showLogin}
-    onClose={handleModalClose}
-/>
-
-<Signup
-    isOpen={showSignup}
-    onClose={handleModalClose}
-/>
